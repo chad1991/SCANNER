@@ -38,7 +38,8 @@
     <button onclick="generateSummary()">📊 GENERATE SUMMARY</button>
     <button onclick="downloadSummary()">💾 DOWNLOAD TXT</button>
     <button onclick="clearSummary()">🧹 CLEAR SUMMARY</button>
-    <button onclick="startScanner()">📷 SCAN</button>
+    <button onclick="startScanner()">📷 START SCAN</button>
+    <button onclick="toggleCamera()">🔄 TOGGLE CAMERA</button>
     <button onclick="stopScanner()">⏹ STOP</button>
   </div>
 
@@ -64,6 +65,10 @@
   <h3>Log</h3>
   <pre id="log"></pre>
 
+  <!-- Success & Error Beep Sounds -->
+  <audio id="beepSuccess" src="https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg" preload="auto"></audio>
+  <audio id="beepError" src="https://actions.google.com/sounds/v1/alarms/beep_short.ogg" preload="auto"></audio>
+
   <!-- ZXing for barcode scanning -->
   <script src="https://unpkg.com/@zxing/library@latest"></script>
   <!-- JSZip for unzipping inventory file -->
@@ -73,6 +78,14 @@
     let inventory = {};
     let summary = {};
     let codeReader = null;
+    let currentCameraIndex = -1;
+    let videoInputDevices = [];
+
+    function playBeep(success = true) {
+      const beep = document.getElementById(success ? "beepSuccess" : "beepError");
+      beep.currentTime = 0;
+      beep.play().catch(() => {});
+    }
 
     function setStatus(msg, isError = false) {
       const el = document.getElementById("status");
@@ -80,20 +93,19 @@
       el.style.color = isError ? "red" : "darkblue";
     }
 
-    // Load invast.zip
+    // Load invast.zip inventory
     setStatus("Fetching invast.zip...");
     fetch("invast.zip")
       .then(res => res.arrayBuffer())
       .then(data => JSZip.loadAsync(data))
       .then(zip => {
-        if (!zip.file("invast.txt")) {
-          throw new Error("invast.txt not found inside zip!");
-        }
+        if (!zip.file("invast.txt")) throw new Error("invast.txt not found inside zip!");
         return zip.file("invast.txt").async("string");
       })
       .then(text => {
-        setStatus("Parsing inventory data...");
-        text.split("\n").forEach(line => {
+        setStatus("Parsing inventory...");
+        let lines = text.split("\n");
+        lines.forEach(line => {
           let parts = line.split(",");
           if (parts.length >= 7) {
             let itemCode = parts[0].trim();
@@ -129,7 +141,8 @@
       let qty = parseInt(document.getElementById("qty").value) || 1;
 
       if (!barcode || !inventory[barcode]) {
-        log("Invalid barcode.");
+        log("❌ Invalid barcode.");
+        playBeep(false);
         return;
       }
 
@@ -142,16 +155,16 @@
         };
       }
       summary[barcode].qty += qty;
+      updateSummaryTable();
+      log("✅ Added " + qty + " × " + barcode);
+      playBeep(true);
 
-      // Auto-clear barcode & reset qty
+      // Auto-clear
       document.getElementById("barcode").value = "";
-      document.getElementById("qty").value = 1;
       document.getElementById("desc").value = "";
       document.getElementById("price").value = "";
       document.getElementById("category").value = "";
-
-      updateSummaryTable();
-      log(`Added ${qty} × ${barcode}`);
+      document.getElementById("qty").value = 1;
     }
 
     function updateSummaryTable() {
@@ -200,30 +213,56 @@
       log("Summary cleared.");
     }
 
+    // Start scanner
     function startScanner() {
       const preview = document.getElementById("preview");
       preview.style.display = "block";
 
       codeReader = new ZXing.BrowserMultiFormatReader();
-      codeReader
-        .listVideoInputDevices()
-        .then(videoInputDevices => {
-          if (videoInputDevices.length > 0) {
-            codeReader.decodeFromVideoDevice(videoInputDevices[0].deviceId, "preview", (result, err) => {
-              if (result) {
-                document.getElementById("barcode").value = result.text;
-                lookupBarcode();
-                addToSummary();
-              }
-            });
-            log("Camera scanner started.");
+      codeReader.listVideoInputDevices().then(devices => {
+        videoInputDevices = devices;
+        if (videoInputDevices.length > 0) {
+          // Try to load last saved camera index
+          let savedIndex = localStorage.getItem("lastCameraIndex");
+          if (savedIndex !== null && savedIndex < videoInputDevices.length) {
+            currentCameraIndex = parseInt(savedIndex);
           } else {
-            log("No camera found.");
+            currentCameraIndex = videoInputDevices.length - 1; // default: back
           }
-        })
-        .catch(err => log("Error starting scanner: " + err));
+          useCamera(currentCameraIndex);
+        } else {
+          log("No camera found.");
+        }
+      });
     }
 
+    // Switch between cameras
+    function toggleCamera() {
+      if (!videoInputDevices.length) {
+        log("No cameras to toggle.");
+        return;
+      }
+      currentCameraIndex = (currentCameraIndex + 1) % videoInputDevices.length;
+      localStorage.setItem("lastCameraIndex", currentCameraIndex);
+      useCamera(currentCameraIndex);
+    }
+
+    function useCamera(index) {
+      stopScanner();
+      const preview = document.getElementById("preview");
+      preview.style.display = "block";
+
+      codeReader.decodeFromVideoDevice(videoInputDevices[index].deviceId, "preview", (result, err) => {
+        if (result) {
+          document.getElementById("barcode").value = result.text;
+          lookupBarcode();
+          addToSummary();
+        }
+      });
+      log("📷 Using camera: " + videoInputDevices[index].label);
+    }
+
+    // Stop scanner
     function stopScanner() {
       if (codeReader) {
         codeReader.reset();
@@ -235,6 +274,16 @@
     function log(msg) {
       document.getElementById("log").textContent += msg + "\n";
     }
+
+    // ENTER key = Add item
+    document.addEventListener("keydown", function(event) {
+      if (event.key === "Enter") {
+        if (document.activeElement.id === "barcode" || document.activeElement.id === "qty") {
+          addToSummary();
+          event.preventDefault();
+        }
+      }
+    });
   </script>
 </body>
 </html>
