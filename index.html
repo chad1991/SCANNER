@@ -1,1 +1,235 @@
 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Suyen Data Collection</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    input { width: 100%; padding: 8px; margin: 5px 0; }
+    button { margin: 5px; padding: 10px 15px; }
+    .btns { margin-top: 15px; }
+    video { width: 100%; max-width: 400px; display: none; margin-top: 10px; border: 1px solid #ccc; }
+    table { width: 100%; margin-top: 15px; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+    #status { margin-top: 10px; font-weight: bold; color: darkblue; }
+  </style>
+</head>
+<body>
+  <h2>Suyen Data Collection</h2>
+  
+  <label>Scan / Type Barcode</label>
+  <input type="text" id="barcode" placeholder="Enter barcode" oninput="lookupBarcode()">
+
+  <label>Description</label>
+  <input type="text" id="desc" readonly>
+
+  <label>Price</label>
+  <input type="text" id="price" readonly>
+
+  <label>Category</label>
+  <input type="text" id="category" readonly>
+
+  <div class="btns">
+    <button onclick="addToSummary()">➕ ADD</button>
+    <button onclick="generateSummary()">📊 GENERATE SUMMARY</button>
+    <button onclick="downloadSummary()">💾 DOWNLOAD TXT</button>
+    <button onclick="clearSummary()">🧹 CLEAR SUMMARY</button>
+    <button onclick="startScanner()">📷 SCAN</button>
+    <button onclick="stopScanner()">⏹ STOP</button>
+  </div>
+
+  <video id="preview"></video>
+
+  <h3>Summary Table</h3>
+  <table id="summaryTable">
+    <thead>
+      <tr>
+        <th>Barcode</th>
+        <th>Description</th>
+        <th>Price</th>
+        <th>Category</th>
+        <th>Qty</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <h3>Status</h3>
+  <p id="status">Loading inventory...</p>
+
+  <h3>Log</h3>
+  <pre id="log"></pre>
+
+  <!-- ZXing for barcode scanning -->
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <!-- JSZip for unzipping inventory file -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <script>
+    let inventory = {};
+    let summary = {};
+    let codeReader = null;
+
+    // Update status text
+    function setStatus(msg, isError = false) {
+      const el = document.getElementById("status");
+      el.textContent = msg;
+      el.style.color = isError ? "red" : "darkblue";
+    }
+
+    // Load invast.zip instead of plain invast.txt
+    setStatus("Fetching invast.zip...");
+    fetch("invast.zip")
+      .then(res => res.arrayBuffer())
+      .then(data => {
+        setStatus("Unzipping file...");
+        return JSZip.loadAsync(data);
+      })
+      .then(zip => {
+        if (!zip.file("invast.txt")) {
+          throw new Error("invast.txt not found inside zip!");
+        }
+        return zip.file("invast.txt").async("string");
+      })
+      .then(text => {
+        setStatus("Parsing inventory data...");
+        let lines = text.split("\n");
+        lines.forEach(line => {
+          let parts = line.split(",");
+          if (parts.length >= 7) {
+            let itemCode = parts[0].trim();
+            let price = parts[3].trim();
+            let barcode = parts[5].trim();
+            let category = parts[6].trim();
+            inventory[barcode] = { desc: itemCode, price: price, category: category };
+          }
+        });
+        setStatus("✅ Inventory loaded: " + Object.keys(inventory).length + " items.");
+        log("Inventory loaded: " + Object.keys(inventory).length + " items.");
+      })
+      .catch(err => {
+        setStatus("❌ Error loading inventory", true);
+        log("Error loading invast.zip: " + err);
+      });
+
+    function lookupBarcode() {
+      let code = document.getElementById("barcode").value.trim();
+      if (inventory[code]) {
+        document.getElementById("desc").value = inventory[code].desc;
+        document.getElementById("price").value = inventory[code].price;
+        document.getElementById("category").value = inventory[code].category;
+      } else {
+        document.getElementById("desc").value = "";
+        document.getElementById("price").value = "";
+        document.getElementById("category").value = "";
+      }
+    }
+
+    function addToSummary() {
+      let barcode = document.getElementById("barcode").value.trim();
+      if (!barcode || !inventory[barcode]) {
+        log("Invalid barcode.");
+        return;
+      }
+
+      if (!summary[barcode]) {
+        summary[barcode] = { 
+          desc: inventory[barcode].desc,
+          price: inventory[barcode].price,
+          category: inventory[barcode].category,
+          qty: 0
+        };
+      }
+      summary[barcode].qty += 1;
+      updateSummaryTable();
+      log("Added " + barcode);
+    }
+
+    function updateSummaryTable() {
+      let tbody = document.querySelector("#summaryTable tbody");
+      tbody.innerHTML = "";
+      Object.keys(summary).forEach(barcode => {
+        let row = `<tr>
+          <td>${barcode}</td>
+          <td>${summary[barcode].desc}</td>
+          <td>${summary[barcode].price}</td>
+          <td>${summary[barcode].category}</td>
+          <td>${summary[barcode].qty}</td>
+        </tr>`;
+        tbody.innerHTML += row;
+      });
+    }
+
+    function generateSummary() {
+      log("Generated summary for " + Object.keys(summary).length + " items.");
+      updateSummaryTable();
+    }
+
+    function downloadSummary() {
+      let text = "Barcode,Description,Price,Category,Qty\n";
+      let totalQty = 0;
+
+      Object.keys(summary).forEach(barcode => {
+        let item = summary[barcode];
+        text += `${barcode},${item.desc},${item.price},${item.category},${item.qty}\n`;
+        totalQty += item.qty;
+      });
+
+      text += `\nTOTAL ITEMS: ${totalQty}\n`;
+
+      let blob = new Blob([text], { type: "text/plain" });
+      let link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "summary.txt";
+      link.click();
+      log("Summary downloaded.");
+    }
+
+    function clearSummary() {
+      summary = {};
+      updateSummaryTable();
+      log("Summary cleared.");
+    }
+
+    // Start barcode scanner
+    function startScanner() {
+      const preview = document.getElementById("preview");
+      preview.style.display = "block";
+
+      codeReader = new ZXing.BrowserMultiFormatReader();
+      codeReader
+        .listVideoInputDevices()
+        .then(videoInputDevices => {
+          if (videoInputDevices.length > 0) {
+            codeReader.decodeFromVideoDevice(videoInputDevices[0].deviceId, "preview", (result, err) => {
+              if (result) {
+                document.getElementById("barcode").value = result.text;
+                lookupBarcode();
+                addToSummary();
+              }
+            });
+            log("Camera scanner started.");
+          } else {
+            log("No camera found.");
+          }
+        })
+        .catch(err => log("Error starting scanner: " + err));
+    }
+
+    // Stop scanner
+    function stopScanner() {
+      if (codeReader) {
+        codeReader.reset();
+        document.getElementById("preview").style.display = "none";
+        log("Scanner stopped.");
+      }
+    }
+
+    function log(msg) {
+      document.getElementById("log").textContent += msg + "\n";
+    }
+  </script>
+</body>
+</html>
