@@ -9,7 +9,14 @@
     input { width: 100%; padding: 8px; margin: 5px 0; }
     button { margin: 5px; padding: 10px 15px; }
     .btns { margin-top: 15px; }
-    video { width: 100%; max-width: 400px; display: none; margin-top: 10px; border: 1px solid #ccc; }
+    video {
+      width: 200px;   /* 👈 Smaller camera preview */
+      height: auto;
+      display: none;
+      margin-top: 10px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+    }
     table { width: 100%; margin-top: 15px; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
     #status { margin-top: 10px; font-weight: bold; color: darkblue; }
@@ -112,9 +119,7 @@
             let price = parts[3].trim();
             let barcode = parts[5].trim();
             let category = parts[6].trim();
-            // store by first 7 digits only
-            let key = barcode.substring(0, 7);
-            inventory[key] = { desc: itemCode, price: price, category: category };
+            inventory[barcode] = { desc: itemCode, price: price, category: category };
           }
         });
         setStatus("✅ Inventory loaded: " + Object.keys(inventory).length + " items.");
@@ -126,41 +131,43 @@
       });
 
     function lookupBarcode() {
-      let rawCode = document.getElementById("barcode").value.trim();
-      let code = rawCode.substring(0, 7); // only first 7 digits
-      if (inventory[code]) {
-        document.getElementById("desc").value = inventory[code].desc;
-        document.getElementById("price").value = inventory[code].price;
-        document.getElementById("category").value = inventory[code].category;
-      } else {
-        document.getElementById("desc").value = "";
-        document.getElementById("price").value = "";
-        document.getElementById("category").value = "";
+      let code = document.getElementById("barcode").value.trim();
+      if (code.length >= 7) {
+        let shortCode = code.substring(0, 7); // ✅ only first 7 digits
+        if (inventory[shortCode]) {
+          document.getElementById("desc").value = inventory[shortCode].desc;
+          document.getElementById("price").value = inventory[shortCode].price;
+          document.getElementById("category").value = inventory[shortCode].category;
+          return;
+        }
       }
+      document.getElementById("desc").value = "";
+      document.getElementById("price").value = "";
+      document.getElementById("category").value = "";
     }
 
     function addToSummary() {
-      let rawCode = document.getElementById("barcode").value.trim();
-      let code = rawCode.substring(0, 7); // only first 7 digits
+      let code = document.getElementById("barcode").value.trim();
+      let shortCode = code.substring(0, 7); // ✅ always trim to 7
       let qty = parseInt(document.getElementById("qty").value) || 1;
 
-      if (!code || !inventory[code]) {
+      if (!shortCode || !inventory[shortCode]) {
         log("❌ Invalid barcode.");
         playBeep(false);
         return;
       }
 
-      if (!summary[code]) {
-        summary[code] = { 
-          desc: inventory[code].desc,
-          price: inventory[code].price,
-          category: inventory[code].category,
+      if (!summary[shortCode]) {
+        summary[shortCode] = { 
+          desc: inventory[shortCode].desc,
+          price: inventory[shortCode].price,
+          category: inventory[shortCode].category,
           qty: 0
         };
       }
-      summary[code].qty += qty;
+      summary[shortCode].qty += qty;
       updateSummaryTable();
-      log("✅ Added " + qty + " × " + code);
+      log("✅ Added " + qty + " × " + shortCode);
       playBeep(true);
 
       // Auto-clear
@@ -174,13 +181,13 @@
     function updateSummaryTable() {
       let tbody = document.querySelector("#summaryTable tbody");
       tbody.innerHTML = "";
-      Object.keys(summary).forEach(code => {
+      Object.keys(summary).forEach(barcode => {
         let row = `<tr>
-          <td>${code}</td>
-          <td>${summary[code].desc}</td>
-          <td>${summary[code].price}</td>
-          <td>${summary[code].category}</td>
-          <td>${summary[code].qty}</td>
+          <td>${barcode}</td>
+          <td>${summary[barcode].desc}</td>
+          <td>${summary[barcode].price}</td>
+          <td>${summary[barcode].category}</td>
+          <td>${summary[barcode].qty}</td>
         </tr>`;
         tbody.innerHTML += row;
       });
@@ -195,9 +202,9 @@
       let text = "Barcode,Description,Price,Category,Qty\n";
       let totalQty = 0;
 
-      Object.keys(summary).forEach(code => {
-        let item = summary[code];
-        text += `${code},${item.desc},${item.price},${item.category},${item.qty}\n`;
+      Object.keys(summary).forEach(barcode => {
+        let item = summary[barcode];
+        text += `${barcode},${item.desc},${item.price},${item.category},${item.qty}\n`;
         totalQty += item.qty;
       });
 
@@ -230,7 +237,7 @@
           if (savedIndex !== null && savedIndex < videoInputDevices.length) {
             currentCameraIndex = parseInt(savedIndex);
           } else {
-            currentCameraIndex = videoInputDevices.length - 1; // default: back
+            currentCameraIndex = videoInputDevices.length - 1;
           }
           useCamera(currentCameraIndex);
         } else {
