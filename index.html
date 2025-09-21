@@ -10,7 +10,7 @@
     button { margin: 5px; padding: 10px 15px; }
     .btns { margin-top: 15px; }
     video {
-      width: 200px;   /* 👈 Smaller camera preview */
+      width: 200px;
       height: auto;
       display: none;
       margin-top: 10px;
@@ -20,6 +20,8 @@
     table { width: 100%; margin-top: 15px; border-collapse: collapse; }
     th, td { border: 1px solid #ccc; padding: 6px; text-align: left; }
     #status { margin-top: 10px; font-weight: bold; color: darkblue; }
+    tfoot tr { background: #f8f8f8; font-weight: bold; }
+    tfoot td { position: sticky; bottom: 0; background: #f8f8f8; }
   </style>
 </head>
 <body>
@@ -64,6 +66,13 @@
       </tr>
     </thead>
     <tbody></tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3">Total</td>
+        <td id="totalQty">0</td>
+        <td id="totalAmount">0.00</td>
+      </tr>
+    </tfoot>
   </table>
 
   <h3>Status</h3>
@@ -183,22 +192,27 @@
     function updateSummaryTable() {
       let tbody = document.querySelector("#summaryTable tbody");
       tbody.innerHTML = "";
-      let total = 0;
+      let totalAmount = 0;
+      let totalQty = 0;
+
       Object.keys(summary).forEach(barcode => {
+        let item = summary[barcode];
         let row = `<tr>
           <td>${barcode}</td>
-          <td>${summary[barcode].desc}</td>
-          <td>${summary[barcode].price}</td>
-          <td>${summary[barcode].category}</td>
-          <td>${summary[barcode].qty}</td>
+          <td>${item.desc}</td>
+          <td>${item.price}</td>
+          <td>${item.category}</td>
+          <td>${item.qty}</td>
         </tr>`;
         tbody.innerHTML += row;
-        total += parseFloat(summary[barcode].price) * summary[barcode].qty;
+
+        totalAmount += parseFloat(item.price) * item.qty;
+        totalQty += item.qty;
       });
-      tbody.innerHTML += `<tr>
-        <td colspan="4"><b>Total</b></td>
-        <td><b>${total.toFixed(2)}</b></td>
-      </tr>`;
+
+      // Update totals in tfoot
+      document.getElementById("totalQty").textContent = totalQty;
+      document.getElementById("totalAmount").textContent = totalAmount.toFixed(2);
 
       // Save summary to localStorage
       localStorage.setItem("summaryData", JSON.stringify(summary));
@@ -210,16 +224,19 @@
     }
 
     function downloadSummary() {
-      let text = "Barcode,Description,Price,Category,Qty\n";
+      let text = "Barcode,Description,Price,Category,Qty,Amount\n";
       let totalQty = 0;
+      let totalAmount = 0;
 
       Object.keys(summary).forEach(barcode => {
         let item = summary[barcode];
-        text += `${barcode},${item.desc},${item.price},${item.category},${item.qty}\n`;
+        let amount = parseFloat(item.price) * item.qty;
+        text += `${barcode},${item.desc},${item.price},${item.category},${item.qty},${amount.toFixed(2)}\n`;
         totalQty += item.qty;
+        totalAmount += amount;
       });
 
-      text += `\nTOTAL ITEMS: ${totalQty}\n`;
+      text += `\nTOTAL QTY: ${totalQty}\nTOTAL AMOUNT: ${totalAmount.toFixed(2)}\n`;
 
       let blob = new Blob([text], { type: "text/plain" });
       let link = document.createElement("a");
@@ -306,7 +323,6 @@
     function log(msg) {
       const logEl = document.getElementById("log");
       logEl.textContent += msg + "\n";
-      // Save log to localStorage
       localStorage.setItem("logData", logEl.textContent);
     }
 
@@ -324,7 +340,6 @@
       }
     });
 
-    // Load saved summary + log on page load
     window.onload = function() {
       let saved = localStorage.getItem("summaryData");
       if (saved) {
