@@ -87,6 +87,8 @@
     let codeReader = null;
     let currentCameraIndex = -1;
     let videoInputDevices = [];
+    let lastScan = "";
+    let lastTime = 0;
 
     function playBeep(success = true) {
       const beep = document.getElementById(success ? "beepSuccess" : "beepError");
@@ -133,7 +135,7 @@
     function lookupBarcode() {
       let code = document.getElementById("barcode").value.trim();
       if (code.length >= 7) {
-        let shortCode = code.substring(0, 7); // ✅ only first 7 digits
+        let shortCode = code.substring(0, 7);
         if (inventory[shortCode]) {
           document.getElementById("desc").value = inventory[shortCode].desc;
           document.getElementById("price").value = inventory[shortCode].price;
@@ -148,7 +150,7 @@
 
     function addToSummary() {
       let code = document.getElementById("barcode").value.trim();
-      let shortCode = code.substring(0, 7); // ✅ always trim to 7
+      let shortCode = code.substring(0, 7);
       let qty = parseInt(document.getElementById("qty").value) || 1;
 
       if (!shortCode || !inventory[shortCode]) {
@@ -181,6 +183,7 @@
     function updateSummaryTable() {
       let tbody = document.querySelector("#summaryTable tbody");
       tbody.innerHTML = "";
+      let total = 0;
       Object.keys(summary).forEach(barcode => {
         let row = `<tr>
           <td>${barcode}</td>
@@ -190,7 +193,15 @@
           <td>${summary[barcode].qty}</td>
         </tr>`;
         tbody.innerHTML += row;
+        total += parseFloat(summary[barcode].price) * summary[barcode].qty;
       });
+      tbody.innerHTML += `<tr>
+        <td colspan="4"><b>Total</b></td>
+        <td><b>${total.toFixed(2)}</b></td>
+      </tr>`;
+
+      // Save summary to localStorage
+      localStorage.setItem("summaryData", JSON.stringify(summary));
     }
 
     function generateSummary() {
@@ -220,7 +231,9 @@
 
     function clearSummary() {
       summary = {};
+      localStorage.removeItem("summaryData");
       updateSummaryTable();
+      clearLog();
       log("Summary cleared.");
     }
 
@@ -234,8 +247,13 @@
         videoInputDevices = devices;
         if (videoInputDevices.length > 0) {
           let savedIndex = localStorage.getItem("lastCameraIndex");
-          if (savedIndex !== null && savedIndex < videoInputDevices.length) {
-            currentCameraIndex = parseInt(savedIndex);
+          if (savedIndex !== null) {
+            let idx = parseInt(savedIndex);
+            if (!isNaN(idx) && idx < videoInputDevices.length) {
+              currentCameraIndex = idx;
+            } else {
+              currentCameraIndex = videoInputDevices.length - 1;
+            }
           } else {
             currentCameraIndex = videoInputDevices.length - 1;
           }
@@ -263,9 +281,15 @@
 
       codeReader.decodeFromVideoDevice(videoInputDevices[index].deviceId, "preview", (result, err) => {
         if (result) {
+          let now = Date.now();
+          if (result.text === lastScan && now - lastTime < 2000) return;
+          lastScan = result.text;
+          lastTime = now;
+
           document.getElementById("barcode").value = result.text;
           lookupBarcode();
           addToSummary();
+          document.getElementById("barcode").focus();
         }
       });
       log("📷 Using camera: " + videoInputDevices[index].label);
@@ -280,7 +304,15 @@
     }
 
     function log(msg) {
-      document.getElementById("log").textContent += msg + "\n";
+      const logEl = document.getElementById("log");
+      logEl.textContent += msg + "\n";
+      // Save log to localStorage
+      localStorage.setItem("logData", logEl.textContent);
+    }
+
+    function clearLog() {
+      document.getElementById("log").textContent = "";
+      localStorage.removeItem("logData");
     }
 
     document.addEventListener("keydown", function(event) {
@@ -291,6 +323,22 @@
         }
       }
     });
+
+    // Load saved summary + log on page load
+    window.onload = function() {
+      let saved = localStorage.getItem("summaryData");
+      if (saved) {
+        summary = JSON.parse(saved);
+        updateSummaryTable();
+        log("📂 Loaded saved summary.");
+      }
+
+      let savedLog = localStorage.getItem("logData");
+      if (savedLog) {
+        document.getElementById("log").textContent = savedLog;
+        log("📂 Loaded saved log.");
+      }
+    };
   </script>
 </body>
 </html>
