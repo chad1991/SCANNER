@@ -112,7 +112,9 @@
             let price = parts[3].trim();
             let barcode = parts[5].trim();
             let category = parts[6].trim();
-            inventory[barcode] = { desc: itemCode, price: price, category: category };
+            // store by first 7 digits only
+            let key = barcode.substring(0, 7);
+            inventory[key] = { desc: itemCode, price: price, category: category };
           }
         });
         setStatus("✅ Inventory loaded: " + Object.keys(inventory).length + " items.");
@@ -124,7 +126,8 @@
       });
 
     function lookupBarcode() {
-      let code = document.getElementById("barcode").value.trim();
+      let rawCode = document.getElementById("barcode").value.trim();
+      let code = rawCode.substring(0, 7); // only first 7 digits
       if (inventory[code]) {
         document.getElementById("desc").value = inventory[code].desc;
         document.getElementById("price").value = inventory[code].price;
@@ -137,26 +140,27 @@
     }
 
     function addToSummary() {
-      let barcode = document.getElementById("barcode").value.trim();
+      let rawCode = document.getElementById("barcode").value.trim();
+      let code = rawCode.substring(0, 7); // only first 7 digits
       let qty = parseInt(document.getElementById("qty").value) || 1;
 
-      if (!barcode || !inventory[barcode]) {
+      if (!code || !inventory[code]) {
         log("❌ Invalid barcode.");
         playBeep(false);
         return;
       }
 
-      if (!summary[barcode]) {
-        summary[barcode] = { 
-          desc: inventory[barcode].desc,
-          price: inventory[barcode].price,
-          category: inventory[barcode].category,
+      if (!summary[code]) {
+        summary[code] = { 
+          desc: inventory[code].desc,
+          price: inventory[code].price,
+          category: inventory[code].category,
           qty: 0
         };
       }
-      summary[barcode].qty += qty;
+      summary[code].qty += qty;
       updateSummaryTable();
-      log("✅ Added " + qty + " × " + barcode);
+      log("✅ Added " + qty + " × " + code);
       playBeep(true);
 
       // Auto-clear
@@ -170,13 +174,13 @@
     function updateSummaryTable() {
       let tbody = document.querySelector("#summaryTable tbody");
       tbody.innerHTML = "";
-      Object.keys(summary).forEach(barcode => {
+      Object.keys(summary).forEach(code => {
         let row = `<tr>
-          <td>${barcode}</td>
-          <td>${summary[barcode].desc}</td>
-          <td>${summary[barcode].price}</td>
-          <td>${summary[barcode].category}</td>
-          <td>${summary[barcode].qty}</td>
+          <td>${code}</td>
+          <td>${summary[code].desc}</td>
+          <td>${summary[code].price}</td>
+          <td>${summary[code].category}</td>
+          <td>${summary[code].qty}</td>
         </tr>`;
         tbody.innerHTML += row;
       });
@@ -191,9 +195,9 @@
       let text = "Barcode,Description,Price,Category,Qty\n";
       let totalQty = 0;
 
-      Object.keys(summary).forEach(barcode => {
-        let item = summary[barcode];
-        text += `${barcode},${item.desc},${item.price},${item.category},${item.qty}\n`;
+      Object.keys(summary).forEach(code => {
+        let item = summary[code];
+        text += `${code},${item.desc},${item.price},${item.category},${item.qty}\n`;
         totalQty += item.qty;
       });
 
@@ -222,7 +226,6 @@
       codeReader.listVideoInputDevices().then(devices => {
         videoInputDevices = devices;
         if (videoInputDevices.length > 0) {
-          // Try to load last saved camera index
           let savedIndex = localStorage.getItem("lastCameraIndex");
           if (savedIndex !== null && savedIndex < videoInputDevices.length) {
             currentCameraIndex = parseInt(savedIndex);
@@ -236,7 +239,6 @@
       });
     }
 
-    // Switch between cameras
     function toggleCamera() {
       if (!videoInputDevices.length) {
         log("No cameras to toggle.");
@@ -262,7 +264,6 @@
       log("📷 Using camera: " + videoInputDevices[index].label);
     }
 
-    // Stop scanner
     function stopScanner() {
       if (codeReader) {
         codeReader.reset();
@@ -275,7 +276,6 @@
       document.getElementById("log").textContent += msg + "\n";
     }
 
-    // ENTER key = Add item
     document.addEventListener("keydown", function(event) {
       if (event.key === "Enter") {
         if (document.activeElement.id === "barcode" || document.activeElement.id === "qty") {
